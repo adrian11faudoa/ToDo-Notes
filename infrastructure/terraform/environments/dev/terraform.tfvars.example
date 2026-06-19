@@ -1,0 +1,10 @@
+# infrastructure/terraform/environments/dev/terraform.tfvars.example
+# Copy to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars — it is in .gitignore.
+
+aws_region     = "us-east-1"
+aws_account_id = "123456789012"
+
+# ACM cert for dev ALB HTTPS — optional, leave empty to use HTTP only
+# (dev ALB listener will use HTTP on port 80 without a cert)
+acm_certificate_arn = ""

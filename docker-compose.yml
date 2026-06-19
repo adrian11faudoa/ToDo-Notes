@@ -1,0 +1,221 @@
+# docker-compose.yml
+# Local development stack that mirrors the AWS architecture:
+#   API (FastAPI) → PostgreSQL → Redis → LocalStack (S3)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f api
+#   docker compose --profile tools up -d   (adds pgAdmin + Redis Commander)
+
+version: "3.9"
+
+networks:
+  noteflow:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+services:
+
+  # ── PostgreSQL (mirrors RDS) ────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: noteflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       noteflow
+      POSTGRES_USER:     noteflow
+      POSTGRES_PASSWORD: dev_password
+      PGDATA:            /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U noteflow -d noteflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - noteflow
+
+  # ── Redis (mirrors ElastiCache) ─────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: noteflow-redis
+    restart: unless-stopped
+    command: redis-server --requirepass dev_redis_password --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "dev_redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - noteflow
+
+  # ── LocalStack (mirrors S3) ─────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: noteflow-localstack
+    restart: unless-stopped
+    environment:
+      SERVICES:       s3
+      DEFAULT_REGION: us-east-1
+      DEBUG:          0
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh:ro
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - noteflow
+
+  # ── API (FastAPI) ───────────────────────────────────────────────
+  api:
+    build:
+      context: backend
+      dockerfile: ../infrastructure/docker/Dockerfile.api
+      target: runtime
+    container_name: noteflow-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    environment:
+      # ── App ─────────────────────────────────────────────────────
+      APP_NAME:               NoteFlow
+      APP_VERSION:            "1.0.0"
+      ENVIRONMENT:            development
+      DEBUG:                  "true"
+      LOG_LEVEL:              debug
+
+      # ── API ─────────────────────────────────────────────────────
+      API_V1_PREFIX:          /api/v1
+      ALLOWED_ORIGINS:        '["http://localhost:3000","http://localhost:5173","http://localhost:8080"]'
+      RATE_LIMIT_PER_MINUTE:  "120"
+      DEFAULT_PAGE_SIZE:      "50"
+      MAX_PAGE_SIZE:          "200"
+
+      # ── Auth ────────────────────────────────────────────────────
+      SECRET_KEY:                    "local-dev-secret-key-do-not-use-in-prod-ever"
+      ACCESS_TOKEN_EXPIRE_MINUTES:   "1440"
+      REFRESH_TOKEN_EXPIRE_DAYS:     "30"
+
+      # ── Database ────────────────────────────────────────────────
+      DATABASE_HOST:          postgres
+      DATABASE_PORT:          "5432"
+      DATABASE_NAME:          noteflow
+      DATABASE_USER:          noteflow
+      DATABASE_PASSWORD:      dev_password
+      DATABASE_POOL_SIZE:     "5"
+      DATABASE_MAX_OVERFLOW:  "5"
+      DATABASE_POOL_TIMEOUT:  "30"
+      DATABASE_ECHO:          "false"
+
+      # ── Redis ───────────────────────────────────────────────────
+      REDIS_HOST:             redis
+      REDIS_PORT:             "6379"
+      REDIS_PASSWORD:         dev_redis_password
+      REDIS_DB:               "0"
+      REDIS_SSL:              "false"
+
+      # ── AWS / LocalStack ────────────────────────────────────────
+      AWS_REGION:             us-east-1
+      AWS_ACCOUNT_ID:         "000000000000"
+      AWS_ACCESS_KEY_ID:      test
+      AWS_SECRET_ACCESS_KEY:  test
+      AWS_ENDPOINT_URL:       http://localstack:4566
+
+      # ── S3 ──────────────────────────────────────────────────────
+      S3_BUCKET_ATTACHMENTS:  noteflow-attachments-local
+      S3_BUCKET_EXPORTS:      noteflow-exports-local
+      S3_PRESIGNED_URL_EXPIRY: "3600"
+
+      # ── Secrets Manager (disabled locally) ──────────────────────
+      SECRETS_MANAGER_ARN:    ""
+
+      # ── SES / SNS (disabled locally) ────────────────────────────
+      SES_FROM_EMAIL:         noreply@noteflow.local
+      SES_ENABLED:            "false"
+      SNS_TOPIC_ARN:          ""
+
+      # ── CloudWatch (disabled locally) ───────────────────────────
+      CLOUDWATCH_LOG_GROUP:        /noteflow/api
+      CLOUDWATCH_METRICS_NAMESPACE: NoteFlow/API
+
+      # ── Celery (disabled locally — no worker started) ───────────
+      CELERY_BROKER_URL:      ""
+      CELERY_RESULT_BACKEND:  ""
+
+      # ── Sentry (disabled locally) ───────────────────────────────
+      SENTRY_DSN:             ""
+
+      # ── Gunicorn / Server ────────────────────────────────────────
+      GUNICORN_WORKERS:       "1"
+      PORT:                   "8000"
+
+    volumes:
+      - ./backend:/app:cached
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app
+               --host 0.0.0.0
+               --port 8000
+               --reload
+               --reload-dir /app/app
+               --log-level debug"
+    networks:
+      - noteflow
+
+  # ── pgAdmin (optional DB GUI) ───────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: noteflow-pgadmin
+    restart: unless-stopped
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    admin@noteflow.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - noteflow
+
+  # ── Redis Commander (optional Redis GUI) ────────────────────────
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: noteflow-redis-ui
+    restart: unless-stopped
+    profiles: ["tools"]
+    environment:
+      REDIS_HOSTS:     local:redis:6379:0:dev_redis_password
+      HTTP_USER:       admin
+      HTTP_PASSWORD:   admin
+    ports:
+      - "8081:8081"
+    networks:
+      - noteflow

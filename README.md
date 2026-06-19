@@ -1,266 +1,345 @@
-# ✦ NoteFlow
+# ✦ NoteFlow — AWS Edition
 
-**A modern, offline-first Notes + To-Do application for Windows**
+**The NoteFlow desktop app, fully migrated to AWS cloud infrastructure.**
 
-Built with Python, PySide6 (Qt), and SQLite — inspired by Notion, Obsidian, and TickTick.
-
----
-
-## ✨ Features
-
-### Notes System
-- ✅ Rich Markdown editor with live formatting toolbar
-- ✅ Auto-save every 3 seconds (configurable)
-- ✅ Folders / categories with color labels
-- ✅ Tags with color coding
-- ✅ Pin favorite notes
-- ✅ Instant full-text search (FTS5)
-- ✅ Note previews in list view
-- ✅ Word count & character count
-- ✅ Last-edited timestamp
-- ✅ Color labels (8 colors)
-- ✅ Image & file attachments
-- ✅ Export to TXT, Markdown, PDF
-- ✅ Archive & Trash with restore
-
-### To-Do System
-- ✅ Task creation with priorities (Urgent / High / Medium / Low)
-- ✅ Subtasks with progress bar
-- ✅ Due dates with overdue detection
-- ✅ Recurring tasks (daily / weekly / monthly / yearly)
-- ✅ Projects / categories
-- ✅ Completion tracking
-- ✅ Kanban board (drag & drop between columns)
-- ✅ Daily planner (Today view)
-- ✅ Task tags and search
-- ✅ System tray reminder notifications
-
-### UI/UX
-- ✅ Dark mode + Light mode
-- ✅ 8 accent color options
-- ✅ Sidebar navigation with folder/project/tag tree
-- ✅ Split-pane layout (resizable)
-- ✅ Top toolbar with global search
-- ✅ Keyboard shortcuts for everything
-- ✅ Right-click context menus
-- ✅ System tray with minimize-to-tray
-- ✅ Startup splash screen
-- ✅ Quick-add popup (Ctrl+Space)
-- ✅ Focus mode (F11)
-
-### Pomodoro Timer
-- ✅ Animated circular progress ring
-- ✅ Work / Short Break / Long Break sessions
-- ✅ Session cycle tracking
-- ✅ System notifications on completion
-- ✅ Link timer to active tasks
-
-### Technical
-- ✅ SQLite with WAL mode (fast concurrent reads)
-- ✅ Full-text search via FTS5
-- ✅ Modular MVVM-style architecture
-- ✅ Theme engine with token system
-- ✅ Centralized settings manager
-- ✅ Automatic backup with 7-day rotation
-- ✅ Crash handler with log files
-- ✅ Window state persistence
-- ✅ High-DPI support (Windows 10/11)
+A production-grade FastAPI backend running on ECS Fargate, backed by RDS PostgreSQL,
+ElastiCache Redis, and S3 — deployed via Terraform with a full CI/CD pipeline.
 
 ---
 
-## 🗂️ Project Structure
+## Architecture Overview
 
 ```
-NoteFlow/
-├── main.py                     # Entry point
-├── requirements.txt
-├── noteflow.spec               # PyInstaller spec
-├── app/
-│   ├── assets/                 # Icons, fonts, images
-│   ├── config/
-│   │   └── settings_manager.py # Centralized settings
-│   ├── database/
-│   │   ├── schema.sql          # Full SQLite schema
-│   │   └── connection.py       # Thread-safe DB manager
-│   ├── models/
-│   │   └── entities.py         # Dataclasses (Note, Task, etc.)
-│   ├── services/
-│   │   ├── note_service.py     # Notes business logic
-│   │   ├── task_service.py     # Tasks business logic
-│   │   ├── notification_service.py
-│   │   └── backup_service.py
-│   ├── themes/
-│   │   └── theme_manager.py    # Full stylesheet generator
-│   ├── views/
-│   │   ├── main_window.py      # Main window & navigation
-│   │   ├── notes_view.py       # Note list + editor
-│   │   ├── tasks_view.py       # List / Kanban / Today
-│   │   ├── pomodoro_view.py    # Pomodoro timer
-│   │   └── settings_view.py    # Settings panel
-│   └── widgets/
-│       ├── common.py           # Reusable widgets
-│       ├── sidebar.py          # Navigation sidebar
-│       ├── splash_screen.py    # Startup splash
-│       └── quick_add.py        # Quick-add popup
-└── docs/
+┌─────────────────────────────────────────────────────────────────┐
+│                          AWS Cloud                               │
+│                                                                  │
+│   ┌──────────┐    ┌─────────────────────────────────────────┐   │
+│   │  Route53 │───▶│          CloudFront (CDN)                │   │
+│   └──────────┘    │    Static assets + attachment delivery   │   │
+│                   └────────────────┬────────────────────────┘   │
+│                                    │                             │
+│   ┌────────────────────────────────▼────────────────────────┐   │
+│   │          Application Load Balancer (HTTPS/443)           │   │
+│   │              WAF rules + SSL termination                 │   │
+│   └───────────────┬────────────────────────────────────────┘    │
+│                   │                                              │
+│   ┌───────────────▼────────────────────────────────────────┐    │
+│   │                 ECS Fargate (Private Subnet)             │    │
+│   │   ┌──────────┐  ┌──────────┐  ┌──────────┐            │    │
+│   │   │ API Task │  │ API Task │  │ API Task │  (2–20)    │    │
+│   │   │ FastAPI  │  │ FastAPI  │  │ FastAPI  │            │    │
+│   │   │ Gunicorn │  │ Gunicorn │  │ Gunicorn │            │    │
+│   │   └────┬─────┘  └────┬─────┘  └────┬─────┘            │    │
+│   └────────┼─────────────┼─────────────┼───────────────────┘   │
+│            │             │             │                         │
+│   ┌────────▼─────────────▼─────────────▼─────────────────┐     │
+│   │                  VPC Private Subnets                   │     │
+│   │                                                        │     │
+│   │   ┌──────────────────┐    ┌───────────────────────┐   │     │
+│   │   │  RDS PostgreSQL  │    │  ElastiCache Redis     │   │     │
+│   │   │  (Multi-AZ)      │    │  (cache + sessions)    │   │     │
+│   │   └──────────────────┘    └───────────────────────┘   │     │
+│   └───────────────────────────────────────────────────────┘     │
+│                                                                  │
+│   ┌──────────────┐  ┌──────────────┐  ┌─────────────────────┐  │
+│   │  S3 (attach) │  │  S3 (export) │  │  Secrets Manager    │  │
+│   │  + presigned │  │  + lifecycle │  │  DB/JWT/Redis creds  │  │
+│   └──────────────┘  └──────────────┘  └─────────────────────┘  │
+│                                                                  │
+│   ┌──────────────────────────────────────────────────────────┐  │
+│   │  CloudWatch: Logs + Metrics + Alarms + Dashboard         │  │
+│   └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Quick Start
+## Stack
 
-### 1. Prerequisites
+| Layer            | Technology                              |
+|------------------|-----------------------------------------|
+| API Framework    | FastAPI + Uvicorn + Gunicorn            |
+| Database         | RDS PostgreSQL 16 (Multi-AZ in prod)   |
+| Cache / Sessions | ElastiCache Redis 7                     |
+| File Storage     | S3 (presigned upload/download)          |
+| CDN              | CloudFront                              |
+| Container        | ECS Fargate (auto-scaling 2–20 tasks)  |
+| Container Image  | ECR                                     |
+| IaC              | Terraform 1.7+                         |
+| CI/CD            | GitHub Actions                          |
+| Secrets          | AWS Secrets Manager                     |
+| Observability    | CloudWatch + Prometheus + Sentry        |
+| Auth             | JWT (access) + refresh token rotation   |
+| Migrations       | Alembic                                 |
+| Search           | PostgreSQL FTS5 (tsvector)              |
 
-- Python 3.11 or 3.12
-- Windows 10/11 (also works on macOS/Linux with minor adjustments)
+---
 
-### 2. Install dependencies
+## Project Structure
+
+```
+NoteFlow-AWS/
+├── backend/
+│   ├── app/
+│   │   ├── api/routes/         # auth, notes, tasks, folders, search
+│   │   ├── core/               # config, security, dependencies
+│   │   ├── db/                 # async session, engine
+│   │   ├── models/             # SQLAlchemy ORM models
+│   │   ├── schemas/            # Pydantic request/response schemas
+│   │   ├── services/           # note_service, s3_service
+│   │   └── main.py             # FastAPI app factory
+│   ├── migrations/             # Alembic migrations
+│   │   └── versions/001_initial_schema.py
+│   ├── tests/                  # pytest integration tests
+│   ├── alembic.ini
+│   ├── .env.example
+│   └── requirements.txt
+│
+├── infrastructure/
+│   ├── docker/
+│   │   └── Dockerfile.api      # Multi-stage production image
+│   └── terraform/
+│       ├── modules/
+│       │   ├── vpc/            # VPC, subnets, NAT, security groups
+│       │   ├── rds/            # RDS PostgreSQL + ElastiCache Redis
+│       │   ├── ecs/            # ECS cluster, ALB, task def, autoscaling
+│       │   ├── s3_cloudfront/  # S3 buckets + CloudFront CDN
+│       │   ├── secrets/        # Secrets Manager + KMS
+│       │   └── monitoring/     # CloudWatch alarms + dashboard
+│       └── environments/
+│           ├── dev/            # Dev environment (minimal cost)
+│           └── prod/           # Production (Multi-AZ, HA)
+│
+├── scripts/
+│   ├── bootstrap-tfstate.sh    # One-time: creates S3 + DynamoDB for TF state
+│   ├── deploy.sh               # Manual deploy helper
+│   └── localstack-init.sh      # Creates local S3 buckets
+│
+├── .github/workflows/
+│   └── deploy.yml              # CI: test → build → push → migrate → deploy
+│
+└── docker-compose.yml          # Local dev: API + Postgres + Redis + LocalStack
+```
+
+---
+
+## Quick Start — Local Development
+
+### Prerequisites
+- Docker Desktop
+- Python 3.12
+- AWS CLI (for scripts)
+
+### 1. Start local services
 
 ```bash
-cd NoteFlow
-pip install -r requirements.txt
+# Starts: API (hot-reload), PostgreSQL, Redis, LocalStack (S3)
+docker compose up -d
+
+# Check everything is healthy
+docker compose ps
+docker compose logs api -f
 ```
 
-### 3. Run the application
+### 2. API is running at
+
+| Service    | URL                              |
+|------------|----------------------------------|
+| API        | http://localhost:8000            |
+| Docs       | http://localhost:8000/docs       |
+| Health     | http://localhost:8000/health     |
+| pgAdmin    | http://localhost:5050 (optional) |
+
+To enable pgAdmin and Redis Commander:
+```bash
+docker compose --profile tools up -d
+```
+
+### 3. Run tests locally
 
 ```bash
-python main.py
+cd backend
+pip install -r requirements.txt pytest pytest-asyncio httpx aiosqlite
+pytest tests/ -v
 ```
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## AWS Deployment
 
-| Action              | Shortcut         |
-|---------------------|------------------|
-| New Note            | `Ctrl+N`         |
-| New Task            | `Ctrl+T`         |
-| Search              | `Ctrl+F`         |
-| Quick Add Popup     | `Ctrl+Space`     |
-| Bold                | `Ctrl+B`         |
-| Italic              | `Ctrl+I`         |
-| Toggle Sidebar      | `Ctrl+\`         |
-| Focus Mode          | `F11`            |
-| Toggle Theme        | `Ctrl+Shift+T`   |
-| Go to Notes         | `Ctrl+1`         |
-| Go to Tasks         | `Ctrl+2`         |
-| Go to Today         | `Ctrl+3`         |
-| Go to Kanban        | `Ctrl+4`         |
-| Go to Pomodoro      | `Ctrl+5`         |
+### Prerequisites
 
----
+- Terraform 1.7+
+- AWS CLI configured (`aws configure`)
+- A registered domain in Route53 (optional)
+- An ACM certificate for your domain
 
-## 📦 Building the Windows Executable
-
-### Install PyInstaller
+### Step 1 — Bootstrap Terraform state backend
 
 ```bash
-pip install pyinstaller
+chmod +x scripts/*.sh
+./scripts/bootstrap-tfstate.sh dev us-east-1
+./scripts/bootstrap-tfstate.sh prod us-east-1
 ```
 
-### Build (single-folder, recommended)
+### Step 2 — Configure environment
 
 ```bash
-pyinstaller noteflow.spec
+# Copy and edit the tfvars file
+cp infrastructure/terraform/environments/prod/terraform.tfvars.example \
+   infrastructure/terraform/environments/prod/terraform.tfvars
+
+# Edit with your values:
+#   aws_account_id, domain_name, acm_certificate_arn, etc.
 ```
 
-The output is in `dist/NoteFlow/NoteFlow.exe`.
-
-### One-file build (slower startup, but single .exe)
+### Step 3 — Deploy infrastructure
 
 ```bash
-pyinstaller \
-  --onefile \
-  --windowed \
-  --name NoteFlow \
-  --add-data "app/database/schema.sql;app/database" \
-  main.py
+cd infrastructure/terraform/environments/prod
+terraform init
+terraform plan  -out=tfplan
+terraform apply tfplan
 ```
 
-### Creating a Windows Installer (optional)
+Terraform outputs the ECR URL, ALB DNS, and CloudFront domain.
 
-Use [Inno Setup](https://jrsoftware.org/isinfo.php) with the output of the `--onedir` build:
+### Step 4 — Build & push first image
 
-1. Download and install Inno Setup
-2. Point it at `dist/NoteFlow/`
-3. Set the main executable to `NoteFlow.exe`
-4. Generate the installer script and compile
+```bash
+chmod +x scripts/deploy.sh
+./scripts/deploy.sh prod
+```
+
+### Step 5 — Set up CI/CD
+
+Add these secrets to your GitHub repository:
+
+| Secret                   | Value                              |
+|--------------------------|------------------------------------|
+| `AWS_ACCESS_KEY_ID`      | IAM user key for CI/CD             |
+| `AWS_SECRET_ACCESS_KEY`  | IAM user secret                    |
+| `AWS_ACCOUNT_ID_PROD`    | Your production AWS account ID     |
+| `AWS_ACCOUNT_ID_DEV`     | Your dev AWS account ID            |
+| `PRIVATE_SUBNET_IDS`     | Comma-separated private subnet IDs |
+| `ECS_SG_ID`              | ECS security group ID              |
+| `API_DOMAIN`             | Your API domain (api.noteflow.app) |
+
+Push to `develop` → deploys to dev.
+Push to `main` → deploys to production.
 
 ---
 
-## 🗄️ Database
+## API Reference
 
-The SQLite database is stored at:
-
-| Platform | Location |
-|----------|----------|
-| Windows  | `%APPDATA%\NoteFlow\noteflow.db` |
-| macOS    | `~/Library/Application Support/NoteFlow/noteflow.db` |
-| Linux    | `~/.local/share/NoteFlow/noteflow.db` |
-
-Automatic backups are stored in the `backups/` subdirectory (7-day rotation).
-
----
-
-## 🏗️ Architecture
-
-NoteFlow follows a **layered architecture**:
+### Authentication
 
 ```
-Views (UI)
-   ↓
-Services (Business Logic)        ← All business rules here
-   ↓
-Database Manager (Data Access)   ← Single source of truth for SQL
-   ↓
-SQLite (Storage)
+POST /api/v1/auth/register    Register new user
+POST /api/v1/auth/login       Login → access + refresh tokens
+POST /api/v1/auth/refresh     Rotate refresh token
+POST /api/v1/auth/logout      Revoke refresh token
+GET  /api/v1/auth/me          Current user profile
 ```
 
-Key design decisions:
-- **Services are singletons** — one instance per service, no re-instantiation
-- **Views never touch the DB directly** — always go through services
-- **Models are pure dataclasses** — no methods that touch the DB
-- **Theme tokens** — all colors are named tokens, never hardcoded in widgets
-- **Thread-local connections** — each thread gets its own SQLite connection
-
----
-
-## 🔌 Extending NoteFlow
-
-### Adding a new view
-
-1. Create `app/views/my_view.py` with a `QWidget` subclass
-2. Add it to `QStackedWidget` in `main_window.py`
-3. Add a `NavButton` to the sidebar
-4. Wire the navigation signal
-
-### Adding a new service
-
-1. Create `app/services/my_service.py` as a singleton
-2. Import and use in views
-
-### Changing the theme
-
-Edit `app/themes/theme_manager.py`:
-- Add tokens to `DARK_TOKENS` / `LIGHT_TOKENS`
-- Use `theme.t("my_token")` in any widget
-
----
-
-## 📋 Requirements
+### Notes
 
 ```
-PySide6>=6.6.0
-markdown2>=2.4.10
-Pillow>=10.0.0
-reportlab>=4.0.0
-python-dateutil>=2.8.2
-plyer>=2.1.0
-pyinstaller>=6.0.0
+GET    /api/v1/notes                List notes (folder, tag, archived filters)
+POST   /api/v1/notes                Create note
+GET    /api/v1/notes/search?q=      Full-text search
+GET    /api/v1/notes/trash          Deleted notes
+GET    /api/v1/notes/{id}           Get note with attachments + presigned URLs
+PATCH  /api/v1/notes/{id}           Update (title, content, folder, color, pin)
+DELETE /api/v1/notes/{id}           Soft delete (or ?permanent=true)
+POST   /api/v1/notes/{id}/pin       Pin/unpin
+POST   /api/v1/notes/{id}/archive   Archive/unarchive
+POST   /api/v1/notes/{id}/tags/{name}  Add tag
+DELETE /api/v1/notes/{id}/tags/{id}    Remove tag
+POST   /api/v1/notes/{id}/attachments/presign  Get S3 presigned upload URL
+GET    /api/v1/notes/{id}/export/{format}      Export (txt/md/pdf) → S3 URL
+```
+
+### Tasks
+
+```
+GET    /api/v1/tasks             List tasks (project, status, priority filters)
+POST   /api/v1/tasks             Create task
+GET    /api/v1/tasks/kanban      Board view grouped by column
+GET    /api/v1/tasks/today       Today's tasks
+GET    /api/v1/tasks/overdue     Overdue tasks
+GET    /api/v1/tasks/{id}        Get task with subtasks
+PATCH  /api/v1/tasks/{id}        Update task
+POST   /api/v1/tasks/{id}/complete  Mark done + handle recurrence
+POST   /api/v1/tasks/{id}/move?column=  Move on Kanban
+DELETE /api/v1/tasks/{id}        Delete task + subtasks
+```
+
+### Other
+
+```
+GET/POST/PATCH/DELETE  /api/v1/folders/{id}
+GET/POST/DELETE        /api/v1/tags/{id}
+GET/POST/PATCH/DELETE  /api/v1/projects/{id}
+GET                    /api/v1/search?q=       Global search (notes + tasks)
+GET                    /api/v1/stats           User statistics
+GET                    /health                 Full health check
+GET                    /ready                  Readiness probe
 ```
 
 ---
 
-## 📄 License
+## Key Design Decisions
 
-MIT License — free to use, modify, and distribute.
+### Security
+- **JWT access tokens** (15-min to 24-hour expiry, configurable)
+- **Refresh token rotation** — every refresh issues a new pair, old token revoked
+- **All data scoped to user_id** — impossible to access another user's data
+- **Passwords hashed with bcrypt** (cost factor 12)
+- **Secrets in AWS Secrets Manager** — never in environment variables directly
+- **S3 presigned URLs** — clients upload/download directly, API never proxies files
+
+### Performance
+- **Async SQLAlchemy** — non-blocking DB queries throughout
+- **PostgreSQL FTS** — `tsvector` + `GIN` index, updated by trigger
+- **Connection pooling** — 20 connections per ECS task, pre-ping enabled
+- **Redis caching** — ready for session cache, rate limiting, hot data
+- **Gzip middleware** — responses compressed automatically
+
+### Reliability
+- **RDS Multi-AZ** in production — automatic failover in < 60s
+- **ECS deployment circuit breaker** — auto-rollback on failed deploy
+- **ALB health checks** — unhealthy tasks replaced automatically
+- **Alembic migrations** run as a separate ECS task before deploy
+- **CloudWatch alarms** — SNS email alert on 5xx spike, high CPU, low disk
+
+### Cost Optimisation (dev)
+- Single-AZ RDS (`db.t4g.micro`)
+- Single Redis node (`cache.t4g.micro`)
+- 1 ECS task, FARGATE_SPOT eligible
+- 7-day log retention
+- Estimated dev cost: **~$45/month**
+
+### Cost Optimisation (prod)
+- Multi-AZ RDS (`db.t4g.medium`) + read replica optional
+- Redis 1 replica (`cache.t4g.small`)
+- 2 ECS tasks baseline, scales to 20
+- Estimated prod cost: **~$120–200/month** at low traffic
+
+---
+
+## Environment Variables Reference
+
+| Variable                | Description                          | Required |
+|-------------------------|--------------------------------------|----------|
+| `DATABASE_HOST`         | RDS endpoint                         | ✓        |
+| `DATABASE_PASSWORD`     | DB password (from Secrets Manager)   | ✓        |
+| `SECRET_KEY`            | JWT signing key (from Secrets Mgr)  | ✓        |
+| `REDIS_HOST`            | ElastiCache endpoint                 | ✓        |
+| `S3_BUCKET_ATTACHMENTS` | S3 bucket for file attachments       | ✓        |
+| `S3_BUCKET_EXPORTS`     | S3 bucket for note exports           | ✓        |
+| `AWS_REGION`            | AWS region                           | ✓        |
+| `SECRETS_MANAGER_ARN`   | ARN to pull secrets from at startup  | prod     |
+| `SENTRY_DSN`            | Sentry error tracking DSN            | optional |
+| `SES_FROM_EMAIL`        | SES sender for email notifications   | optional |
+| `ALLOWED_ORIGINS`       | JSON array of allowed CORS origins   | ✓        |

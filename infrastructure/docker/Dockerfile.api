@@ -1,0 +1,63 @@
+# ── Stage 1: Builder ──────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+# System deps for psycopg2 / cryptography build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libpq-dev libssl-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps into a prefix (no venv needed in slim)
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+    && pip install --prefix=/install --no-cache-dir -r requirements.txt
+
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+LABEL maintainer="NoteFlow Team"
+LABEL org.opencontainers.image.title="NoteFlow API"
+LABEL org.opencontainers.image.version="1.0.0"
+
+# Create non-root user (AWS security best practice)
+RUN groupadd -g 1001 appgroup && useradd -u 1001 -g appgroup -s /bin/sh -m appuser
+
+WORKDIR /app
+
+# Runtime system deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application source
+COPY --chown=appuser:appgroup . .
+
+# Switch to non-root user
+USER appuser
+
+# Expose API port
+EXPOSE 8000
+
+# Health check (used by ECS / ALB)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Entrypoint: gunicorn with uvicorn workers
+# ECS injects PORT env var; default 8000
+CMD ["sh", "-c", \
+    "alembic upgrade head && \
+     gunicorn app.main:app \
+       --worker-class uvicorn.workers.UvicornWorker \
+       --workers ${GUNICORN_WORKERS:-2} \
+       --bind 0.0.0.0:${PORT:-8000} \
+       --timeout 60 \
+       --graceful-timeout 30 \
+       --keep-alive 5 \
+       --access-logfile - \
+       --error-logfile - \
+       --log-level ${LOG_LEVEL:-info}"]

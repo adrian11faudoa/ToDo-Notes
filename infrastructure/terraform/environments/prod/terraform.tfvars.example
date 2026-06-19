@@ -1,0 +1,46 @@
+# infrastructure/terraform/environments/prod/terraform.tfvars.example
+# Copy to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars — it is in .gitignore.
+
+aws_region       = "us-east-1"
+aws_account_id   = "123456789012"
+environment      = "production"
+
+# Your domain (must be managed in Route53 or you can skip Route53 integration)
+domain_name      = "noteflow.app"
+
+# ACM certificate ARN for the ALB (must be in the same region as the ALB)
+# Create via: aws acm request-certificate --domain-name "*.noteflow.app" --validation-method DNS
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# ACM certificate in us-east-1 for CloudFront (CloudFront requires us-east-1)
+# Leave empty to use CloudFront's default certificate (*.cloudfront.net)
+cloudfront_acm_arn = ""
+
+# Route53 hosted zone ID for automatic DNS record creation
+# Leave empty to manage DNS manually
+route53_zone_id  = ""
+
+# VPC CIDR block
+vpc_cidr         = "10.0.0.0/16"
+
+# RDS instance class (prod: db.t4g.medium or db.t4g.large)
+rds_instance_class = "db.t4g.medium"
+
+# RDS allocated storage in GB
+rds_storage_gb   = 50
+
+# ElastiCache Redis node type
+redis_node_type  = "cache.t4g.small"
+
+# Docker image tag to deploy (updated by CI/CD)
+image_tag        = "latest"
+
+# CORS allowed origins (JSON array as string)
+allowed_origins  = ["https://noteflow.app", "https://www.noteflow.app"]
+
+# Sentry DSN for error tracking (optional, leave empty to disable)
+sentry_dsn       = ""
+
+# Email address for CloudWatch alarm notifications
+alert_email      = "ops@noteflow.app"
